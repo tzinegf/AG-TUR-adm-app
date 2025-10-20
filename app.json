@@ -32,8 +32,12 @@
     "plugins": [
       "expo-router"
     ],
-    "experiments": {
+  "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "EXPO_PUBLIC_SUPABASE_URL": "https://flxqngznhmdrvzoqdjtw.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZseHFuZ3puaG1kcnZ6b3FkanR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MDAzODcsImV4cCI6MjA3NTI3NjM4N30.k-64TVRZhWOHoOfYN1kIPoIWwHW0-o-dUVZ42Nuglps"
     }
   }
 }
