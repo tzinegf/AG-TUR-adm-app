@@ -501,14 +501,20 @@ export default function AdminBuses() {
                   />
                 </View>
               </View>
+-
 
-              <TouchableOpacity style={styles.saveButton} onPress={handleSaveBus}>
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setModalVisible(false)}>
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={handleSaveBus}>
                 <Text style={styles.saveButtonText}>
                   {editingBus ? 'Salvar Alterações' : 'Cadastrar Ônibus'}
                 </Text>
               </TouchableOpacity>
-            </ScrollView>
-          </View>
+            </View>
+           </View>
         </View>
       </Modal>
     </View>
@@ -745,6 +751,8 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     padding: 20,
+    maxHeight: '80%',
+    marginBottom: 8,
   },
   formSection: {
     marginBottom: 24,
@@ -817,14 +825,41 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: '#DC2626',
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 20,
   },
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cancelButton: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
   },
 });

@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Picker } from '@react-native-picker/picker';
 import { bookingsService } from '../../services/bookings';
 import { supabase } from '../../lib/supabase';
+import { couponsService, type Coupon } from '../../services/coupons';
 
 interface Booking {
   id: string;
@@ -44,6 +45,9 @@ export default function AdminBookings() {
   const [filterPayment, setFilterPayment] = useState<'all' | 'paid' | 'pending' | 'refunded'>('all');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponChecking, setCouponChecking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -57,7 +61,7 @@ export default function AdminBookings() {
       const mapped = (all as any[]).map((row: any) => {
         const route = row?.route || {};
         const user = row?.user || {};
-        const departureRaw = route?.departure_time || (route as any)?.departure;
+        const departureRaw = (route as any)?.departure_datetime || route?.departure_time || (route as any)?.departure;
         let departureDate = '';
         let departureTime = '';
         if (departureRaw) {
@@ -82,16 +86,16 @@ export default function AdminBookings() {
           userEmail: user?.email || '—',
           routeId: row?.route_id,
           routeName,
-          busId: '',
-          busPlate: '',
+          busId: row?.bus_id || '—',
+          busPlate: row?.bus_plate || '—',
           seatNumber,
           departureDate,
           departureTime,
-          price: typeof row?.total_price === 'number' ? row.total_price : 0,
-          status: (row?.status || 'pending'),
+          price: row?.total_price ?? 0,
+          status: (row?.status || 'pending') as Booking['status'],
           paymentStatus,
-          createdAt: row?.created_at || '',
-        } as Booking;
+          createdAt: row?.created_at || '—'
+        };
       });
       setBookings(mapped);
     } catch (error) {
@@ -227,6 +231,11 @@ export default function AdminBookings() {
     }
   };
 
+  const computeTotalWithCoupon = (baseTotal: number) => {
+    if (!appliedCoupon) return baseTotal;
+    return couponsService.computeDiscountedTotal(baseTotal, appliedCoupon);
+  };
+
   const renderBookingItem = ({ item }: { item: Booking }) => (
     <TouchableOpacity style={styles.bookingCard} onPress={() => handleViewBooking(item)}>
       <View style={styles.bookingHeader}>
@@ -256,7 +265,7 @@ export default function AdminBookings() {
         <View style={styles.infoRow}>
           <Ionicons name="cash" size={16} color="#6B7280" />
           <Text style={styles.infoText}>
-            R$ {item.price.toFixed(2)} - {getPaymentLabel(item.paymentStatus)}
+            R$ {computeTotalWithCoupon(item.price).toFixed(2)} - {getPaymentLabel(item.paymentStatus)}
           </Text>
         </View>
       </View>
@@ -411,13 +420,61 @@ export default function AdminBookings() {
                   <Text style={styles.sectionTitle}>Informações de Pagamento</Text>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Valor:</Text>
-                    <Text style={styles.detailValue}>R$ {selectedBooking.price.toFixed(2)}</Text>
+                    <Text style={styles.detailValue}>R$ {computeTotalWithCoupon(selectedBooking.price).toFixed(2)}</Text>
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Status:</Text>
                     <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedBooking.paymentStatus) }]}>
                       <Text style={styles.statusText}>{getPaymentLabel(selectedBooking.paymentStatus)}</Text>
                     </View>
+                  </View>
+                </View>
+
+                {/* Coupon Application */}
+                <View style={styles.detailSection}>
+                  <Text style={styles.sectionTitle}>Cupom de Desconto</Text>
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Código do Cupom</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TextInput
+                        style={[styles.input, { flex: 1 }]}
+                        value={couponCode}
+                        onChangeText={setCouponCode}
+                        placeholder="Ex: PROMO10"
+                        autoCapitalize="characters"
+                      />
+                      <TouchableOpacity
+                        style={[styles.modalButton, { backgroundColor: '#DC2626', paddingHorizontal: 16, borderRadius: 12, alignItems: 'center', flexDirection: 'row', gap: 8 }]}
+                        onPress={async () => {
+                          try {
+                            setCouponChecking(true);
+                            const coupon = await couponsService.validateAndGet(couponCode.trim().toUpperCase());
+                            setAppliedCoupon(coupon);
+                            Alert.alert('Sucesso', `Cupom ${coupon.code} aplicado`);
+                          } catch (error: any) {
+                            setAppliedCoupon(null);
+                            Alert.alert('Cupom inválido', error?.message || 'Verifique o código ou validade');
+                          } finally {
+                            setCouponChecking(false);
+                          }
+                        }}
+                        disabled={couponChecking || !couponCode.trim()}
+                      >
+                        <Ionicons name="pricetag" size={18} color="#FFFFFF" />
+                        <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Aplicar</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {appliedCoupon ? (
+                      <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                        <Text style={{ color: '#10B981' }}>
+                          Cupom {appliedCoupon.code} aplicado {appliedCoupon.discount_type === 'percentage' ? `${appliedCoupon.discount_value}%` : `R$ ${String(appliedCoupon.discount_value.toFixed(2)).replace('.', ',')}`}
+                        </Text>
+                        <TouchableOpacity onPress={() => setAppliedCoupon(null)}>
+                          <Ionicons name="close-circle" size={18} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
                   </View>
                 </View>
 
@@ -474,6 +531,12 @@ export default function AdminBookings() {
                 </View>
               </ScrollView>
             )}
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setModalVisible(false)}>
+                <Ionicons name="close-circle" size={20} color="#6B7280" />
+                <Text style={styles.cancelButtonText}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -638,7 +701,38 @@ const styles = StyleSheet.create({
     color: '#1F2937',
   },
   modalBody: {
+    maxHeight: '80%',
+    marginBottom: 8,
     padding: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cancelButton: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   detailSection: {
     marginBottom: 24,
@@ -701,4 +795,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  // add missing coupon input styles
+  formGroup: { marginBottom: 16 },
+  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  input: { backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 16, color: '#1F2937', borderWidth: 1, borderColor: '#E5E7EB' },
+  applyButton: { backgroundColor: '#DC2626', paddingHorizontal: 16, borderRadius: 12 },
 });

@@ -82,8 +82,8 @@ export const dashboardService = {
      
 
       // Calcular receitas
-      const todayRevenue = todayRevenueResult.data?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
-      const monthRevenue = monthRevenueResult.data?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
+      const todayRevenue = todayRevenueResult.data?.reduce((sum: number, payment: { amount?: number }) => sum + (payment.amount || 0), 0) || 0;
+      const monthRevenue = monthRevenueResult.data?.reduce((sum: number, payment: { amount?: number }) => sum + (payment.amount || 0), 0) || 0;
 
       const stats: DashboardStats = {
         totalBookings: totalBookingsResult.count || 0,
@@ -254,7 +254,7 @@ export const dashboardService = {
         console.log('✅ Reservas recentes encontradas:', recentBookings?.length);
       }
 
-      recentBookings?.forEach(booking => {
+      recentBookings?.forEach((booking: { id: string; created_at: string; passenger_name: string; routes?: { origin?: string; destination?: string } }) => {
         const route = booking.routes as any;
         activities.push({
           id: `booking-${booking.id}`,
@@ -265,7 +265,7 @@ export const dashboardService = {
           color: '#10B981',
         });
       });
-
+      
       // Get recent routes
       console.log('🚌 Buscando rotas recentes...');
       const { data: recentRoutes, error: routesError } = await supabase
@@ -279,18 +279,17 @@ export const dashboardService = {
       } else {
         console.log('✅ Rotas recentes encontradas:', recentRoutes?.length);
       }
-
-      recentRoutes?.forEach(route => {
-        activities.push({
-          id: `route-${route.id}`,
-          type: 'route',
-          description: `Nova rota criada: ${route.origin} → ${route.destination}`,
-          timestamp: route.created_at,
-          icon: 'bus',
-          color: '#3B82F6',
-        });
-      });
-
+       recentRoutes?.forEach((route: { id: string; created_at: string; origin: string; destination: string }) => {
+         activities.push({
+           id: `route-${route.id}`,
+           type: 'route',
+           description: `Nova rota criada: ${route.origin} → ${route.destination}`,
+           timestamp: route.created_at,
+           icon: 'bus',
+           color: '#3B82F6',
+         });
+       });
+       
       // Get recent users
       console.log('👤 Buscando usuários recentes...');
       const { data: recentUsers, error: usersError } = await supabase
@@ -305,17 +304,16 @@ export const dashboardService = {
       } else {
         console.log('✅ Usuários recentes encontrados:', recentUsers?.length);
       }
-
-      recentUsers?.forEach(user => {
-        activities.push({
-          id: `user-${user.id}`,
-          type: 'user',
-          description: `Novo usuário cadastrado: ${user.name || 'Usuário'}`,
-          timestamp: user.created_at,
-          icon: 'person-add',
-          color: '#8B5CF6',
-        });
-      });
+       recentUsers?.forEach((user: { id: string; created_at: string; name?: string }) => {
+         activities.push({
+           id: `user-${user.id}`,
+           type: 'user',
+           description: `Novo usuário cadastrado: ${user.name || 'Usuário'}`,
+           timestamp: user.created_at,
+           icon: 'person-add',
+           color: '#8B5CF6',
+         });
+       });
 
       // Sort by timestamp (most recent first)
       const sortedActivities = activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());

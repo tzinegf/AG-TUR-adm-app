@@ -280,7 +280,7 @@ export const bookingsService = {
       throw new Error('Failed to fetch stats');
     }
 
-    const totalRevenue = revenue?.reduce((sum, booking) => sum + booking.total_price, 0) || 0;
+    const totalRevenue = revenue?.reduce((sum: number, booking: { total_price: number }) => sum + booking.total_price, 0) || 0;
 
     return {
       totalBookings: totalBookings?.length || 0,

@@ -102,7 +102,7 @@ export const seatsService = {
       if (error) throw error;
       
       // Verificar se todas as poltronas estão disponíveis
-      return data?.every(seat => seat.is_available) || false;
+      return data?.every((seat: { is_available: boolean }) => seat.is_available) || false;
     } catch (error) {
       console.error('Error checking seats availability:', error);
       return false;

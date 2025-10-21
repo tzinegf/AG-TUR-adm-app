@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { dashboardService, DashboardStats, RecentActivity } from '../../services/dashboard';
 import { adminAuthService, type AdminUser } from '../../services/adminAuth';
+import { couponsService } from '../../services/coupons';
 
 interface DashboardCard {
   id: string;
@@ -28,6 +29,7 @@ export default function AdminDashboard() {
     monthRevenue: 0,
   });
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
+  const [activeCoupons, setActiveCoupons] = useState(0);
 
   const dashboardCards: DashboardCard[] = [
     {
@@ -62,18 +64,28 @@ export default function AdminDashboard() {
       color: '#F59E0B',
       route: '/admin/users',
     },
+    {
+      id: '5',
+      title: 'Cupons',
+      value: activeCoupons.toString(),
+      icon: 'pricetag',
+      color: '#F59E0B',
+      route: '/admin/coupons',
+    },
   ];
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [dashboardStats, activities] = await Promise.all([
+      const [dashboardStats, activities, couponsActive] = await Promise.all([
         dashboardService.getDashboardStats(),
         dashboardService.getRecentActivities(),
+        couponsService.getActiveCount(),
       ]);
       
       setStats(dashboardStats);
       setRecentActivities(activities);
+      setActiveCoupons(couponsActive || 0);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {

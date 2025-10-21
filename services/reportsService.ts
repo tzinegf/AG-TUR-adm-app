@@ -89,7 +89,7 @@ export const reportsService = {
 
       if (error) throw error;
 
-      return data?.map(booking => ({
+      return data?.map((booking: any) => ({
         id: booking.id,
         date: new Date(booking.created_at).toLocaleDateString('pt-BR'),
         route: `${booking.routes?.[0]?.origin} → ${booking.routes?.[0]?.destination}`,
@@ -130,9 +130,9 @@ export const reportsService = {
 
       if (error) throw error;
 
-      return data?.map(user => {
+      return data?.map((user: any) => {
         const totalBookings = user.bookings?.length || 0;
-        const totalSpent = user.bookings?.reduce((sum, booking) => sum + (booking.total_price || 0), 0) || 0;
+        const totalSpent = user.bookings?.reduce((sum: number, booking: any) => sum + (booking.total_price || 0), 0) || 0;
 
         return {
           id: user.id,
@@ -176,14 +176,14 @@ export const reportsService = {
 
       if (error) throw error;
 
-      return data?.map(route => {
+      return data?.map((route: any) => {
         // Filtrar bookings pelo período
-        const filteredBookings = route.bookings?.filter(booking => 
+        const filteredBookings = route.bookings?.filter((booking: any) => 
           booking.created_at >= filter.startDate && booking.created_at <= filter.endDate
         ) || [];
 
         const totalBookings = filteredBookings.length;
-        const totalRevenue = filteredBookings.reduce((sum, booking) => sum + (booking.total_price || 0), 0);
+        const totalRevenue = filteredBookings.reduce((sum: number, booking: any) => sum + (booking.total_price || 0), 0);
         const occupancyRate = route.total_seats ? ((route.total_seats - route.available_seats) / route.total_seats) * 100 : 0;
 
         return {
@@ -230,18 +230,18 @@ export const reportsService = {
 
       if (error) throw error;
 
-      return data?.map(bus => {
+      return data?.map((bus: any) => {
         // Calcular estatísticas baseadas nas rotas do ônibus
         let totalTrips = 0;
         let totalRevenue = 0;
 
-        bus.routes?.forEach(route => {
-          const filteredBookings = route.bookings?.filter(booking => 
+        bus.routes?.forEach((route: any) => {
+          const filteredBookings = route.bookings?.filter((booking: any) => 
             booking.created_at >= filter.startDate && booking.created_at <= filter.endDate
           ) || [];
           
           totalTrips += filteredBookings.length;
-          totalRevenue += filteredBookings.reduce((sum, booking) => sum + (booking.total_price || 0), 0);
+          totalRevenue += filteredBookings.reduce((sum: number, booking: any) => sum + (booking.total_price || 0), 0);
         });
 
         return {

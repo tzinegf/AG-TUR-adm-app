@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -13,7 +14,8 @@ import {
   View,
 } from 'react-native';
 import { mask } from 'react-native-mask-text';
-import { busRoutesService } from '../../services/busRoutes';
+import { busRoutesService, type BusRoute } from '../../services/busRoutes';
+import { userService } from '../../services/userService';
 
 // Máscaras separadas para data e hora
 const applyDateMask = (value: string) => {
@@ -71,9 +73,15 @@ const parseDateTime = (dateTimeString: string): Date | null => {
     const match = dateTimeString.match(timeOnlyRegex);
     if (match) {
       const [, hour, minute] = match;
-      // Se for apenas hora, usa a data atual
-      const today = new Date();
-      return new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hour), parseInt(minute));
+      // Se for apenas hora, usa a próxima ocorrência (hoje se ainda futuro; caso contrário, amanhã)
+      const h = parseInt(hour, 10);
+      const m = parseInt(minute, 10);
+      const now = new Date();
+      const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+      if (candidate.getTime() <= now.getTime()) {
+        candidate.setDate(candidate.getDate() + 1);
+      }
+      return candidate;
     }
   }
   
@@ -91,14 +99,14 @@ const composeDateTime = (dateStr: string, timeStr: string): string => {
 const getCapacityByBusType = (type: string): number => {
   switch ((type || '').toLowerCase()) {
     case 'executivo':
-      return 44;
+      return 46;
     case 'semi-leito':
-      return 40;
+      return 46;
     case 'leito':
-      return 30;
+      return 46;
     case 'convencional':
     default:
-      return 48;
+      return 46;
   }
 };
 
@@ -110,7 +118,6 @@ const formatBusTypeForDB = (type: string): string => {
   if (t === 'leito') return 'Leito';
   return 'Convencional';
 };
-
 
 // Converter "DD/MM/AAAA HH:MM" para formato SQL "YYYY-MM-DD HH:MM"
 const toSQLDateTime = (dateTimeStr: string): string => {
@@ -124,8 +131,29 @@ const toSQLDateTime = (dateTimeStr: string): string => {
   const min = pad(dt.getMinutes());
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 };
-
-// Separar "DD/MM/AAAA HH:MM" em { date, time }
+const toDateSafe = (input: string): Date | null => {
+  if (!input) return null;
+  // 1) Tenta via parseDateTime (cobre "DD/MM/AAAA HH:MM" e apenas hora "HH:MM")
+  const parsed = parseDateTime(input);
+  if (parsed) return parsed;
+  // 2) Tenta Date direto
+  const direct = new Date(input);
+  if (!isNaN(direct.getTime())) return direct;
+  // 3) Normaliza para ISO (YYYY-MM-DDTHH:MM(:SS))
+  const normalized = input.includes(' ') ? input.replace(' ', 'T') : input;
+  const withSeconds = /T\d{2}:\d{2}$/.test(normalized) ? `${normalized}:00` : normalized;
+  const d2 = new Date(withSeconds);
+  if (!isNaN(d2.getTime())) return d2;
+  // 4) Tenta separar em { date, time } e montar
+  const { date, time } = splitDateTime(input);
+  if (date && time) {
+    const [day, month, year] = date.split('/').map(v => parseInt(v, 10));
+    const [hour, minute] = time.split(':').map(v => parseInt(v, 10));
+    const d3 = new Date(year, month - 1, day, hour, minute);
+    if (!isNaN(d3.getTime())) return d3;
+  }
+  return null;
+};
 const splitDateTime = (dateTimeString: string): { date: string; time: string } => {
   const input = (dateTimeString || '').trim();
   // Formato brasileiro: DD/MM/AAAA HH:MM
@@ -192,6 +220,8 @@ interface RouteDisplay {
   arrival: string;
   bus_type: string;
   bus_company: string;
+  // motorista vinculado
+  driver_id?: string;
 }
 
 export default function RoutesManagement() {
@@ -202,6 +232,11 @@ export default function RoutesManagement() {
 
   const [isModalVisible, setModalVisible] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RouteDisplay | null>(null);
+  
+  // Lista de motoristas
+  const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
+  const [driversLoading, setDriversLoading] = useState(false);
+  const [driversError, setDriversError] = useState<string | null>(null);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -214,13 +249,33 @@ export default function RoutesManagement() {
     price: '',
     bus_company: 'AG TUR',
     bus_type: 'convencional',
-    amenities: []
+    amenities: [],
+    driverId: ''
   });
 
   // Fetch routes on component mount
   useEffect(() => {
     console.log('Usuário acessou a página: Rotas Administrativas');
     fetchRoutes();
+  }, []);
+
+  // Carregar motoristas ativos
+  useEffect(() => {
+    const loadDrivers = async () => {
+      try {
+        setDriversLoading(true);
+        setDriversError(null);
+        const res = await userService.searchUsers({ role: 'driver', status: 'active', limit: 100 });
+        const list = (res.users || []).map(u => ({ id: u.id, name: u.name || u.email }));
+        setDrivers(list);
+      } catch (err) {
+        console.error('Erro ao carregar motoristas:', err);
+        setDriversError('Falha ao carregar motoristas');
+      } finally {
+        setDriversLoading(false);
+      }
+    };
+    loadDrivers();
   }, []);
 
   // Fetch all routes from API
@@ -231,23 +286,31 @@ export default function RoutesManagement() {
       
       // Use the new getAllRoutes function from busRoutesService
       const routesData = await busRoutesService.getAllRoutes();
+      const nowMs = Date.now();
+      const futureRoutes: BusRoute[] = (routesData || []).filter((route: BusRoute) => {
+         const dt = toDateSafe((route as any).departure_datetime);
+         return dt ? dt.getTime() > nowMs : false;
+       });
       
-      if (routesData) {
-        const formattedRoutes = routesData.map(route => ({
-          id: route.id,
-          origin: route.origin,
-          destination: route.destination,
-          departure: route.departure,
-          arrival: route.arrival,
-          duration: route.duration || 'N/A',
-          distance: '~', // This would need to be calculated or stored
-          price: `R$ ${route.price.toFixed(2)}`,
-          active: true, // Assuming all routes are active since there's no status field
-          bus_company: route.bus_company,
-          bus_type: route.bus_type || 'Convencional'
-        }));
-        setRoutes(formattedRoutes);
-      }
+       if (futureRoutes.length) {
+        const formattedRoutes: RouteDisplay[] = futureRoutes.map((route: BusRoute) => ({
+           id: String(route.id),
+           origin: route.origin,
+           destination: route.destination,
+           departure: (route as any).departure_datetime,
+           arrival: (route as any).arrival_datetime,
+           duration: route.duration || 'N/A',
+           distance: '~',
+           price: `R$ ${String((route.price ?? 0).toFixed(2)).replace('.', ',')}`,
+           active: route.status === 'active',
+           bus_company: route.bus_company || 'AG TUR',
+           bus_type: route.bus_type || 'Convencional',
+           driver_id: (route as any).driver_id || ''
+         }));
+         setRoutes(formattedRoutes);
+       } else {
+         setRoutes([]);
+       }
     } catch (err) {
       setError('Falha ao carregar rotas');
       console.error('Error fetching routes:', err);
@@ -296,7 +359,8 @@ export default function RoutesManagement() {
         price: '',
         bus_company: 'AG TUR',
         bus_type: 'convencional',
-        amenities: []
+        amenities: [],
+        driverId: ''
       });
       setEditingRoute(null);
     }
@@ -333,7 +397,8 @@ export default function RoutesManagement() {
                 price: '',
                 bus_company: 'AG TUR',
                 bus_type: 'convencional',
-                amenities: []
+                amenities: [],
+                driverId: ''
               });
               setEditingRoute(null);
               toggleModal();
@@ -353,7 +418,8 @@ export default function RoutesManagement() {
         price: '',
         bus_company: 'AG TUR',
         bus_type: 'convencional',
-        amenities: []
+        amenities: [],
+        driverId: ''
       });
       setEditingRoute(null);
       toggleModal();
@@ -392,6 +458,12 @@ export default function RoutesManagement() {
 
       if (!formData.bus_company?.trim()) {
         Alert.alert('Erro de Validação', 'Por favor, informe a empresa do ônibus');
+        return;
+      }
+
+      // Motorista é obrigatório ao cadastrar nova rota
+      if (!editingRoute && (!formData.driverId || !formData.driverId.trim())) {
+        Alert.alert('Erro de Validação', 'Por favor, selecione um motorista');
         return;
       }
 
@@ -534,18 +606,30 @@ export default function RoutesManagement() {
       const normalizedBusTypeForDB = formatBusTypeForDB(formData.bus_type);
       const capacity = getCapacityByBusType(normalizedBusTypeForDB);
 
+      const toHHMMSS = (d: Date) => {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      };
+
       const newRoute = {
         origin: formData.origin.trim(),
         destination: formData.destination.trim(),
-        departure: toSQLDateTime(departureCombined),
-        arrival: toSQLDateTime(arrivalCombined),
+        departure_datetime: departureDateTime!.toISOString(),
+        arrival_datetime: arrivalDateTime!.toISOString(),
+        // Legacy time-only fields for compatibility with older schemas
+        departure: toHHMMSS(departureDateTime!),
+        arrival: toHHMMSS(arrivalDateTime!),
+        departure_time: toHHMMSS(departureDateTime!),
+        arrival_time: toHHMMSS(arrivalDateTime!),
         price: finalPrice,
         bus_company: formData.bus_company.trim(),
         bus_type: normalizedBusTypeForDB,
         
         duration: calculateDurationRealTime(departureCombined, arrivalCombined),
-        status: 'active',
-        available_seats: capacity
+        status: 'active' as 'active',
+        available_seats: capacity,
+        // Vinculação do motorista
+        driver_id: formData.driverId || undefined
       };
 
       if (editingRoute) {
@@ -568,12 +652,12 @@ export default function RoutesManagement() {
   };
 
   const handleEditRoute = (route: RouteDisplay) => {
-    setEditingRoute(route);
-    // Format price to remove currency symbol
-    const priceValue = route.price.replace('R$ ', '').replace(',', '.');
-    const dep = splitDateTime(route.departure || '');
-    const arr = splitDateTime(route.arrival || '');
-    
+    const { departure, arrival } = route;
+    const dep = splitDateTime(departure);
+    const arr = splitDateTime(arrival);
+
+    const priceValue = route.price.replace('R$ ', '').trim();
+
     setFormData({
       origin: route.origin,
       destination: route.destination,
@@ -584,15 +668,17 @@ export default function RoutesManagement() {
       price: priceValue,
       bus_company: route.bus_company,
       bus_type: route.bus_type || 'convencional',
-      amenities: []
+      amenities: [],
+      driverId: (route as any).driver_id || ''
     });
+    setEditingRoute(route);
     setModalVisible(true);
   };
 
   const toggleRouteStatus = async (routeId: string, currentStatus: boolean) => {
     try {
       await busRoutesService.updateRoute(routeId, {
-        status: currentStatus ? 'cancelled' : 'active'
+        status: currentStatus ? 'inactive' : 'active'
       });
       await fetchRoutes();
       Alert.alert('Sucesso', 'Status da rota atualizado com sucesso');
@@ -739,7 +825,7 @@ export default function RoutesManagement() {
             </Text>
 
           <ScrollView 
-            style={styles.formScrollView}
+            style={styles.modalBody}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
@@ -841,10 +927,16 @@ export default function RoutesManagement() {
                 style={styles.input}
                 value={formData.price}
                 onChangeText={(text) => {
-                  // Remove caracteres não numéricos e aplica máscara de moeda
-                  const numericValue = text.replace(/[^\d]/g, '');
-                  const maskedPrice = mask(numericValue, '999,99');
-                  handleInputChange('price', maskedPrice);
+                  const digits = text.replace(/\D/g, '');
+                  if (!digits) {
+                    handleInputChange('price', '');
+                    return;
+                  }
+                  const padded = digits.padStart(3, '0');
+                  const intPartRaw = padded.slice(0, -2);
+                  const intPart = intPartRaw.replace(/^0+(?=\d)/, '') || '0';
+                  const fracPart = padded.slice(-2);
+                  handleInputChange('price', `${intPart},${fracPart}`);
                 }}
                 placeholder="Ex: 85,00"
                 keyboardType="numeric"
@@ -854,11 +946,32 @@ export default function RoutesManagement() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Empresa *</Text>
               <TextInput
+                editable={false}
                 style={styles.input}
                 value={formData.bus_company}
                 onChangeText={(text) => handleInputChange('bus_company', text)}
                 placeholder="Nome da empresa"
               />
+            </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Motorista *</Text>
+              <View style={styles.input}>
+                <Picker
+                  selectedValue={formData.driverId}
+                  onValueChange={(value) => handleInputChange('driverId', value as string)}
+                >
+                  <Picker.Item label={driversLoading ? 'Carregando...' : 'Selecione um motorista'} value="" color="#9CA3AF" />
+                  {drivers.map((d) => (
+                    <Picker.Item key={d.id} label={d.name} value={d.id} color="#1F2937" />
+                  ))}
+                </Picker>
+              </View>
+              {!driversLoading && !formData.driverId ? (
+                <Text style={{ color: '#EF4444', marginTop: 4 }}>Selecione um motorista</Text>
+              ) : null}
+              {driversError ? (
+                <Text style={{ color: '#EF4444', marginTop: 4 }}>{driversError}</Text>
+              ) : null}
             </View>
 
             <View style={styles.formGroup}>
@@ -898,6 +1011,10 @@ export default function RoutesManagement() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Motorista vinculado */}
+            
+
           </ScrollView>
 
           <View style={styles.modalActions}>
@@ -1110,7 +1227,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    paddingBottom: 40,
+    paddingBottom: 8,
     maxHeight: '90%',
   },
   modalHandle: {
@@ -1128,9 +1245,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     textAlign: 'center',
   },
-  formScrollView: {
-    maxHeight: '60%',
-    marginBottom: 16,
+  modalBody: {
+    maxHeight: '80%',
+    marginBottom: 8,
   },
   formGroup: {
     marginBottom: 16,
@@ -1156,12 +1273,15 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: 8,
     borderRadius: 12,
     alignItems: 'center',
     flexDirection: 'row',

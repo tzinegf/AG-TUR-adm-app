@@ -3,14 +3,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+// Safely resolve extra from multiple Expo Constant shapes across platforms
+const extra: any = (
+  (Constants?.expoConfig as any)?.extra ||
+  (Constants as any)?.manifest?.extra ||
+  (Constants as any)?.manifest2?.extra ||
+  {}
+);
+
 // Resolve env vars from process.env (Expo public) and fallback to app.json extra
 const resolvedSupabaseUrl =
   (process.env.EXPO_PUBLIC_SUPABASE_URL as string | undefined) ??
-  (Constants.expoConfig?.extra as any)?.EXPO_PUBLIC_SUPABASE_URL;
+  extra?.EXPO_PUBLIC_SUPABASE_URL;
 
 const resolvedSupabaseAnonKey =
   (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY as string | undefined) ??
-  (Constants.expoConfig?.extra as any)?.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!resolvedSupabaseUrl || !resolvedSupabaseAnonKey) {
   console.warn(
@@ -55,8 +63,12 @@ export interface BusRoute {
   id: string;
   origin: string;
   destination: string;
-  departure: string;
-  arrival: string;
+  // Novos campos de data/hora
+  departure_datetime?: string; // timestamp/text no banco
+  arrival_datetime?: string;   // timestamp/text no banco
+  // Campos antigos (se ainda existirem) mantidos como opcionais
+  departure?: string;
+  arrival?: string;
   price: number;
   bus_company: string;
   bus_type: string;

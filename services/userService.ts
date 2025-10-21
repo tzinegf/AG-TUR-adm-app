@@ -13,6 +13,10 @@ export interface User {
   last_login: string;
   avatar?: string;
   bookings?: Booking[];
+  // Optional aggregate/stat flags used in admin UI
+  totalBookings?: number;
+  totalSpent?: number;
+  phoneVerified?: boolean;
 }
 
 export interface Booking {
