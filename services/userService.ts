@@ -5,16 +5,12 @@ export interface User {
   name: string;
   email: string;
   phone: string;
-  cpf: string;
+  document: string;
   role: 'user' | 'admin' | 'manager' | 'driver';
   status: 'active' | 'inactive' | 'suspended';
-  emailVerified: boolean;
-  phoneVerified: boolean;
-  createdAt: string;
+  created_at: string;
   updatedAt?: string;
-  lastLogin: string;
-  totalBookings: number;
-  totalSpent: number;
+  last_login: string;
   avatar?: string;
   bookings?: Booking[];
 }
@@ -65,7 +61,7 @@ class UserService {
 
       if (query) {
         queryBuilder = queryBuilder.or(
-          `name.ilike.%${query}%,email.ilike.%${query}%,cpf.ilike.%${query}%`
+          `name.ilike.%${query}%,email.ilike.%${query}%,document.ilike.%${query}%`
         );
       }
 
@@ -114,14 +110,43 @@ class UserService {
 
   async createUser(userData: Omit<User, 'id'>): Promise<User> {
     try {
+      // Primeiro, criar o usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: 'temp123456', // Senha temporária - usuário deve resetar
+        options: {
+          data: {
+            name: userData.name,
+            role: userData.role
+          }
+        }
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Falha ao criar usuário no sistema de autenticação');
+
+      // Depois, criar o perfil na tabela profiles usando o ID gerado
+      const profileData = {
+        id: authData.user.id,
+        name: userData.name,
+        email: userData.email,
+        phone: userData.phone || '',
+        document: userData.document || '',
+        role: userData.role,
+        status: userData.status,
+        created_at: new Date().toISOString(),
+        last_login: new Date().toISOString(),
+        avatar: userData.avatar || null
+      };
+
       const { data: user, error } = await supabase
         .from(this.TABLE_NAME)
-        .insert([userData])
+        .upsert([profileData], { onConflict: 'id' })
         .select()
         .single();
 
       if (error) throw error;
-      if (!user) throw new Error('Erro ao criar usuário');
+      if (!user) throw new Error('Erro ao criar perfil do usuário');
 
       return user as User;
     } catch (error) {

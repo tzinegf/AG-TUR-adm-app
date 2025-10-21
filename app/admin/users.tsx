@@ -1,21 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Modal,
   Alert,
   FlatList,
   Image,
-  Switch,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Picker } from '@react-native-picker/picker';
-import { userService, type User, type UserSearchParams, type Booking } from '../../services/userService';
+import { userService, type Booking, type User, type UserSearchParams } from '../../services/userService';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
@@ -89,7 +88,7 @@ export default function AdminUsers() {
     const matchesSearch = 
       (user.name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
       (user.email?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-      (user.cpf || '').includes(searchQuery) ||
+      (user.document || '').includes(searchQuery) ||
       (user.phone || '').includes(searchQuery);
     
     const matchesTripSearch = tripSearchQuery === '' || 
@@ -109,11 +108,9 @@ export default function AdminUsers() {
     name: '',
     email: '',
     phone: '',
-    cpf: '',
+    document: '',
     role: 'user' as 'user' | 'admin' | 'manager' | 'driver',
     status: 'active' as 'active' | 'inactive' | 'suspended',
-    emailVerified: false,
-    phoneVerified: false,
   });
 
   const handleAddUser = () => {
@@ -122,11 +119,9 @@ export default function AdminUsers() {
       name: '',
       email: '',
       phone: '',
-      cpf: '',
+      document: '',
       role: 'user',
       status: 'active',
-      emailVerified: false,
-      phoneVerified: false,
     });
     setModalVisible(true);
   };
@@ -137,11 +132,9 @@ export default function AdminUsers() {
       name: user.name,
       email: user.email,
       phone: user.phone,
-      cpf: user.cpf,
+      document: user.document,
       role: user.role,
       status: user.status,
-      emailVerified: user.emailVerified,
-      phoneVerified: user.phoneVerified,
     });
     setModalVisible(true);
   };
@@ -188,7 +181,7 @@ export default function AdminUsers() {
   };
 
   const handleSaveUser = async () => {
-    if (!formData.name || !formData.email || !formData.cpf) {
+    if (!formData.name || !formData.email || !formData.document) {
       Alert.alert('Erro', 'Por favor, preencha todos os campos obrigatórios.');
       return;
     }
@@ -205,10 +198,8 @@ export default function AdminUsers() {
       } else {
         await userService.createUser({
           ...formData,
-          createdAt: new Date().toISOString(),
-          lastLogin: '-',
-          totalBookings: 0,
-          totalSpent: 0,
+          created_at: new Date().toISOString(),
+          last_login: '-',
         });
         Alert.alert('Sucesso', 'Usuário cadastrado com sucesso!');
       }
@@ -316,14 +307,7 @@ export default function AdminUsers() {
             <View style={[styles.roleBadge, { backgroundColor: getRoleColor(item.role) }]}>
               <Text style={styles.roleText}>{getRoleLabel(item.role)}</Text>
             </View>
-            <View style={styles.verificationIcons}>
-              {item.emailVerified && (
-                <Ionicons name="mail-outline" size={14} color="#10B981" />
-              )}
-              {item.phoneVerified && (
-                <Ionicons name="call-outline" size={14} color="#10B981" />
-              )}
-            </View>
+           
           </View>
           {item.role === 'user' && (
             <View style={styles.userStats}>
@@ -363,9 +347,13 @@ export default function AdminUsers() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <LinearGradient colors={['#DC2626', '#B91C1C']} style={styles.header}>
         <Text style={styles.headerTitle}>Usuários</Text>
-      </View>
+        <TouchableOpacity style={styles.addButton} onPress={handleAddUser}>
+          <Ionicons name="add" size={24} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Novo Usuário</Text>
+        </TouchableOpacity>
+      </LinearGradient>
       
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
@@ -445,7 +433,241 @@ export default function AdminUsers() {
         contentContainerStyle={styles.listContainer}
       />
 
-      {/* Rest of the component (modals, etc.) */}
+      {/* Add/Edit User Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingUser ? 'Editar Usuário' : 'Cadastrar Novo Usuário'}
+              </Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+      
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Nome *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.name}
+                  onChangeText={(text) => setFormData({ ...formData, name: text })}
+                  placeholder="Ex: João da Silva"
+                />
+              </View>
+      
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Email *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.email}
+                  onChangeText={(text) => setFormData({ ...formData, email: text })}
+                  placeholder="exemplo@dominio.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+      
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Telefone</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.phone}
+                  onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                  placeholder="(00) 00000-0000"
+                  keyboardType="phone-pad"
+                />
+              </View>
+      
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>CPF *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.document}
+                  onChangeText={(text) => setFormData({ ...formData, document: text })}
+                  placeholder="000.000.000-00"
+                  keyboardType="numeric"
+                />
+              </View>
+      
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Papel</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={formData.role}
+                    onValueChange={(value) => setFormData({ ...formData, role: value as 'user' | 'admin' | 'manager' | 'driver' })}
+                    style={styles.formPicker}
+                  >
+                    <Picker.Item label="Usuário" value="user" color="#1F2937" />
+                    <Picker.Item label="Administrador" value="admin" color="#1F2937" />
+                    <Picker.Item label="Gerente" value="manager" color="#1F2937" />
+                    <Picker.Item label="Motorista" value="driver" color="#1F2937" />
+                  </Picker>
+                </View>
+              </View>
+      
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Status</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={formData.status}
+                    onValueChange={(value) => setFormData({ ...formData, status: value as 'active' | 'inactive' | 'suspended' })}
+                    style={styles.formPicker}
+                  >
+                    <Picker.Item label="Ativo" value="active" color="#1F2937" />
+                    <Picker.Item label="Inativo" value="inactive" color="#1F2937" />
+                    <Picker.Item label="Suspenso" value="suspended" color="#1F2937" />
+                  </Picker>
+                </View>
+              </View> 
+              <TouchableOpacity style={styles.saveButton} onPress={handleSaveUser}>
+                <Text style={styles.saveButtonText}>
+                  {editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Details Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={detailsModalVisible}
+        onRequestClose={() => setDetailsModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Detalhes do Usuário</Text>
+              <TouchableOpacity onPress={() => setDetailsModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+      
+            <ScrollView style={styles.modalBody}>
+              {selectedUser && (
+                <View>
+                  <View style={styles.detailsHeader}>
+                    <Image 
+                      source={{ uri: selectedUser.avatar || `https://ui-avatars.com/api/?name=${selectedUser.name}&background=DC2626&color=fff` }}
+                      style={styles.detailsAvatar}
+                    />
+                    <Text style={styles.detailsName}>{selectedUser.name}</Text>
+                  </View>
+      
+                  <View style={styles.detailsSection}>
+                    <Text style={styles.detailsSectionTitle}>Informações</Text>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="mail-outline" size={18} color="#6B7280" />
+                      <View style={styles.detailContent}>
+                        <Text style={styles.detailLabel}>Email</Text>
+                        <Text style={styles.detailValue}>{selectedUser.email}</Text>
+                        {selectedUser.email && <Text style={styles.verifiedText}>Verificado</Text>}
+                      </View>
+                    </View>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="call-outline" size={18} color="#6B7280" />
+                      <View style={styles.detailContent}>
+                        <Text style={styles.detailLabel}>Telefone</Text>
+                        <Text style={styles.detailValue}>{selectedUser.phone || '-'}</Text>
+                        {selectedUser.phoneVerified && <Text style={styles.verifiedText}>Verificado</Text>}
+                      </View>
+                    </View>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="id-card" size={18} color="#6B7280" />
+                      <View style={styles.detailContent}>
+                        <Text style={styles.detailLabel}>CPF</Text>
+                        <Text style={styles.detailValue}>{selectedUser.document}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="person" size={18} color="#6B7280" />
+                      <View style={styles.detailContent}>
+                        <Text style={styles.detailLabel}>Papel</Text>
+                        <Text style={styles.detailValue}>{getRoleLabel(selectedUser.role)}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="checkmark-circle" size={18} color={getStatusColor(selectedUser.status)} />
+                      <View style={styles.detailContent}>
+                        <Text style={styles.detailLabel}>Status</Text>
+                        <Text style={styles.detailValue}>{selectedUser.status === 'active' ? 'Ativo' : selectedUser.status === 'inactive' ? 'Inativo' : 'Suspenso'}</Text>
+                      </View>
+                    </View>
+                  </View>
+      
+                  {selectedUser.bookings && selectedUser.bookings.length > 0 ? (
+                    <View style={styles.detailsSection}>
+                      <Text style={styles.detailsSectionTitle}>Histórico de Viagens</Text>
+                      {selectedUser.bookings.map((booking: Booking) => (
+                        <View key={booking.bookingCode} style={styles.bookingCard}>
+                          <View style={styles.bookingHeader}>
+                            <View style={styles.bookingInfo}>
+                              <Text style={styles.bookingRoute}>{booking.routeName || '-'}</Text>
+                              <Text style={styles.bookingCode}>Código: {booking.bookingCode}</Text>
+                            </View>
+                            <View style={[styles.bookingStatusBadge, { backgroundColor: getBookingStatusColor(booking.status) }]}>
+                              <Text style={styles.bookingStatusText}>{getBookingStatusLabel(booking.status)}</Text>
+                            </View>
+                          </View>
+                          <View style={styles.bookingDetails}>
+                            <View style={styles.bookingDetailItem}>
+                              <Ionicons name="calendar" size={14} color="#6B7280" />
+                              <Text style={styles.bookingDetailText}>{booking.departureDate || '-'}</Text>
+                            </View>
+                            <View style={styles.bookingDetailItem}>
+                              <Ionicons name="time" size={14} color="#6B7280" />
+                              <Text style={styles.bookingDetailText}>{booking.departureTime || '-'}</Text>
+                            </View>
+                            <View style={styles.bookingDetailItem}>
+                              <Ionicons name="location" size={14} color="#6B7280" />
+                             <Text style={styles.bookingDetailText}>{route.origin || '-'} → {route.destination || '-'}</Text>
+                            </View>
+                            <View style={styles.bookingDetailItem}>
+                              <Ionicons name="pricetag" size={14} color="#6B7280" />
+                              <Text style={styles.bookingDetailText}>R$ {booking.price?.toFixed(2) || '0,00'}</Text>
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.noTripsText}>Sem viagens registradas</Text>
+                  )}
+      
+                  <View style={styles.detailsActions}>
+                    <TouchableOpacity
+                      style={[styles.detailActionButton, { backgroundColor: '#3B82F6' }]}
+                      onPress={() => {
+                        setDetailsModalVisible(false);
+                        handleEditUser(selectedUser);
+                      }}
+                    >
+                      <Ionicons name="pencil" size={18} color="#FFFFFF" />
+                      <Text style={styles.detailActionText}>Editar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.detailActionButton, { backgroundColor: '#F59E0B' }]}
+                      onPress={() => handleResetPassword(selectedUser)}
+                    >
+                      <Ionicons name="key" size={18} color="#FFFFFF" />
+                      <Text style={styles.detailActionText}>Resetar Senha</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -456,17 +678,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
   },
   header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingTop: 20,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#FFFFFF',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    marginLeft: 8,
+    fontWeight: '600',
   },
   statsContainer: {
     flexDirection: 'row',
