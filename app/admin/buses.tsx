@@ -501,7 +501,6 @@ export default function AdminBuses() {
                   />
                 </View>
               </View>
--
 
             </ScrollView>
             <View style={styles.modalActions}>

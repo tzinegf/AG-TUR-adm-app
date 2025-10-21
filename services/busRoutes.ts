@@ -6,19 +6,19 @@ export type BusRoute = {
   destination: string;
   departure_datetime?: string; // ISO string (timestamptz/timestamp)
   arrival_datetime?: string;   // ISO string (timestamptz/timestamp)
-  // Legacy optional fields (present in some DBs)
-  departure?: string; // time-only HH:MM:SS in legacy schemas
-  arrival?: string;   // time-only HH:MM:SS in legacy schemas
   departure_time?: string; // alternate legacy naming
   arrival_time?: string;   // alternate legacy naming
   duration?: string;  // free-form duration; type varies by schema
   price?: number;
   bus_company?: string;
-  bus_type?: string;
   available_seats?: number;
   status?: "active" | "inactive";
   // Driver linking
   driver_id?: string;
+  // Optional second driver linking
+  second_driver_id?: string;
+  // Bus linking
+  bus_id?: string;
 };
 
 const extractTime = (iso?: string) => {

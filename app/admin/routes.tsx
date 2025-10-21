@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { mask } from 'react-native-mask-text';
 import { busRoutesService, type BusRoute } from '../../services/busRoutes';
+import { busService } from '../../services/busService';
 import { userService } from '../../services/userService';
 
 // Máscaras separadas para data e hora
@@ -95,29 +96,6 @@ const composeDateTime = (dateStr: string, timeStr: string): string => {
   return d && t ? `${d} ${t}` : '';
 };
 
-// Capacidade padrão por tipo de ônibus
-const getCapacityByBusType = (type: string): number => {
-  switch ((type || '').toLowerCase()) {
-    case 'executivo':
-      return 46;
-    case 'semi-leito':
-      return 46;
-    case 'leito':
-      return 46;
-    case 'convencional':
-    default:
-      return 46;
-  }
-};
-
-// Normalizar texto do tipo de ônibus para armazenamento (Title Case)
-const formatBusTypeForDB = (type: string): string => {
-  const t = (type || '').trim().toLowerCase();
-  if (t === 'executivo') return 'Executivo';
-  if (t === 'semi-leito') return 'Semi-Leito';
-  if (t === 'leito') return 'Leito';
-  return 'Convencional';
-};
 
 // Converter "DD/MM/AAAA HH:MM" para formato SQL "YYYY-MM-DD HH:MM"
 const toSQLDateTime = (dateTimeStr: string): string => {
@@ -222,6 +200,10 @@ interface RouteDisplay {
   bus_company: string;
   // motorista vinculado
   driver_id?: string;
+  // segundo motorista vinculado (opcional)
+  second_driver_id?: string;
+  // ônibus vinculado
+  bus_id?: string;
 }
 
 export default function RoutesManagement() {
@@ -238,6 +220,34 @@ export default function RoutesManagement() {
   const [driversLoading, setDriversLoading] = useState(false);
   const [driversError, setDriversError] = useState<string | null>(null);
   
+  // Lista de ônibus
+  const [buses, setBuses] = useState<{ id: string; plate: string; model: string; type: string }[]>([]);
+  const [busesLoading, setBusesLoading] = useState(false);
+  const [busesError, setBusesError] = useState<string | null>(null);
+  const [allBusesMap, setAllBusesMap] = useState<Record<string, { plate: string; model: string; type: string; seats?: number }>>({});
+  // Helpers para normalizar tipo de ônibus e capacidade padrão
+  const formatBusTypeForDB = (type: string) => {
+    const t = (type || '').toLowerCase().trim();
+    if (t === 'convencional') return 'convencional';
+    if (t === 'executivo') return 'executivo';
+    // Mapear semi-leito para leito, pois o banco não possui semi-leito
+    if (t === 'semi-leito' || t === 'semileito' || t === 'semi leito') return 'leito';
+    if (t === 'leito') return 'leito';
+    return 'convencional';
+  };
+  
+  const getCapacityByBusType = (type: string) => {
+    switch (type) {
+      case 'executivo':
+        return 46;
+      case 'leito':
+        return 32;
+      case 'convencional':
+      default:
+        return 42;
+    }
+  };
+
   // Form state
   const [formData, setFormData] = useState({
     origin: '',
@@ -250,7 +260,9 @@ export default function RoutesManagement() {
     bus_company: 'AG TUR',
     bus_type: 'convencional',
     amenities: [],
-    driverId: ''
+    driverId: '',
+    secondDriverId: '',
+    busId: ''
   });
 
   // Fetch routes on component mount
@@ -278,6 +290,47 @@ export default function RoutesManagement() {
     loadDrivers();
   }, []);
 
+  // Carregar ônibus disponíveis
+  useEffect(() => {
+    const loadBuses = async () => {
+      try {
+        setBusesLoading(true);
+        setBusesError(null);
+        const availableBuses = await busService.getAvailableBuses();
+        const busList = availableBuses.map(bus => ({ 
+          id: bus.id, 
+          plate: bus.plate, 
+          model: bus.model,
+          type: bus.type 
+        }));
+        setBuses(busList);
+      } catch (err) {
+        console.error('Erro ao carregar ônibus:', err);
+        setBusesError('Falha ao carregar ônibus');
+      } finally {
+        setBusesLoading(false);
+      }
+    };
+    loadBuses();
+  }, []);
+
+  // Carregar todos os ônibus (ativos e inativos) para exibição correta nos cards
+  useEffect(() => {
+    const loadAllBusesForCards = async () => {
+      try {
+        const allBuses = await busService.getAllBuses();
+        const map = allBuses.reduce((acc, bus) => {
+          acc[bus.id] = { plate: bus.plate, model: bus.model, type: bus.type, seats: bus.seats };
+          return acc;
+        }, {} as Record<string, { plate: string; model: string; type: string; seats?: number }>);
+        setAllBusesMap(map);
+      } catch (err) {
+        console.error('Erro ao carregar todos os ônibus para cards:', err);
+      }
+    };
+    loadAllBusesForCards();
+  }, []);
+
   // Fetch all routes from API
   const fetchRoutes = async () => {
     try {
@@ -294,19 +347,21 @@ export default function RoutesManagement() {
       
        if (futureRoutes.length) {
         const formattedRoutes: RouteDisplay[] = futureRoutes.map((route: BusRoute) => ({
-           id: String(route.id),
-           origin: route.origin,
-           destination: route.destination,
-           departure: (route as any).departure_datetime,
-           arrival: (route as any).arrival_datetime,
-           duration: route.duration || 'N/A',
-           distance: '~',
-           price: `R$ ${String((route.price ?? 0).toFixed(2)).replace('.', ',')}`,
-           active: route.status === 'active',
-           bus_company: route.bus_company || 'AG TUR',
-           bus_type: route.bus_type || 'Convencional',
-           driver_id: (route as any).driver_id || ''
-         }));
+          id: String(route.id),
+          origin: route.origin,
+          destination: route.destination,
+          departure: (route as any).departure_datetime,
+          arrival: (route as any).arrival_datetime,
+          duration: route.duration || 'N/A',
+          distance: '~',
+          price: `R$ ${String((route.price ?? 0).toFixed(2)).replace('.', ',')}`,
+          active: route.status === 'active',
+          bus_company: route.bus_company || 'AG TUR',
+          bus_type: route.bus_type || 'Convencional',
+          driver_id: (route as any).driver_id || '',
+          second_driver_id: (route as any).second_driver_id || '',
+          bus_id: (route as any).bus_id || ''
+        }));
          setRoutes(formattedRoutes);
        } else {
          setRoutes([]);
@@ -360,7 +415,8 @@ export default function RoutesManagement() {
         bus_company: 'AG TUR',
         bus_type: 'convencional',
         amenities: [],
-        driverId: ''
+        driverId: '',
+        busId: ''
       });
       setEditingRoute(null);
     }
@@ -398,7 +454,8 @@ export default function RoutesManagement() {
                 bus_company: 'AG TUR',
                 bus_type: 'convencional',
                 amenities: [],
-                driverId: ''
+                driverId: '',
+                busId: ''
               });
               setEditingRoute(null);
               toggleModal();
@@ -419,7 +476,8 @@ export default function RoutesManagement() {
         bus_company: 'AG TUR',
         bus_type: 'convencional',
         amenities: [],
-        driverId: ''
+        driverId: '',
+        busId: ''
       });
       setEditingRoute(null);
       toggleModal();
@@ -466,145 +524,18 @@ export default function RoutesManagement() {
         Alert.alert('Erro de Validação', 'Por favor, selecione um motorista');
         return;
       }
-
-      // Validação de nomes de cidades brasileiras
-      const cityNameRegex = /^[A-Za-zÀ-ÿ\s\-'\.]+$/;
       
-      if (!cityNameRegex.test(formData.origin.trim())) {
-        Alert.alert('Erro de Validação', 'Nome da cidade de origem inválido. Use apenas letras, espaços, hífens e acentos');
-        return;
-      }
-
-      if (!cityNameRegex.test(formData.destination.trim())) {
-        Alert.alert('Erro de Validação', 'Nome da cidade de destino inválido. Use apenas letras, espaços, hífens e acentos');
-        return;
-      }
-
-      // Validação de tamanho dos nomes das cidades
-      if (formData.origin.trim().length < 2 || formData.origin.trim().length > 50) {
-        Alert.alert('Erro de Validação', 'O nome da cidade de origem deve ter entre 2 e 50 caracteres');
-        return;
-      }
-
-      if (formData.destination.trim().length < 2 || formData.destination.trim().length > 50) {
-        Alert.alert('Erro de Validação', 'O nome da cidade de destino deve ter entre 2 e 50 caracteres');
-        return;
-      }
-
-      // Validação de origem e destino diferentes
-      if (formData.origin.trim().toLowerCase() === formData.destination.trim().toLowerCase()) {
-        Alert.alert('Erro de Validação', 'A cidade de origem deve ser diferente da cidade de destino');
-        return;
-      }
-
-      // Validação de data e hora
-      if (!validateBrazilianDate(formData.departureDate.trim())) {
-        Alert.alert('Erro de Validação', 'Data de partida inválida. Use o formato DD/MM/AAAA');
-        return;
-      }
-      if (!validateBrazilianTime(formData.departureTime.trim())) {
-        Alert.alert('Erro de Validação', 'Hora de partida inválida. Use o formato HH:MM');
-        return;
-      }
-
-      if (!validateBrazilianDate(formData.arrivalDate.trim())) {
-        Alert.alert('Erro de Validação', 'Data de chegada inválida. Use o formato DD/MM/AAAA');
-        return;
-      }
-      if (!validateBrazilianTime(formData.arrivalTime.trim())) {
-        Alert.alert('Erro de Validação', 'Hora de chegada inválida. Use o formato HH:MM');
-        return;
-      }
-
-  // Validar se a data/hora de chegada é posterior à data/hora de partida
-  const departureCombined = composeDateTime(formData.departureDate.trim(), formData.departureTime.trim());
-  const arrivalCombined = composeDateTime(formData.arrivalDate.trim(), formData.arrivalTime.trim());
-  const departureDateTime = parseDateTime(departureCombined);
-  const arrivalDateTime = parseDateTime(arrivalCombined);
-      
-      if (departureDateTime && arrivalDateTime) {
-        if (arrivalDateTime <= departureDateTime) {
-          Alert.alert('Erro de Validação', 'A data e hora de chegada deve ser posterior à data e hora de partida');
-          return;
+      // Limpar segundo motorista se ficar igual ao primeiro
+      useEffect(() => {
+        if (formData.secondDriverId && formData.secondDriverId === formData.driverId) {
+          setFormData(prev => ({ ...prev, secondDriverId: '' }));
         }
-        
-        // Verificar se a duração da viagem não excede 24 horas
-        const durationMs = arrivalDateTime.getTime() - departureDateTime.getTime();
-        const durationHours = durationMs / (1000 * 60 * 60);
-        
-        if (durationHours > 24) {
-          Alert.alert('Erro de Validação', 'A duração da viagem não pode exceder 24 horas');
-          return;
-        }
-      } else {
-        Alert.alert('Erro de Validação', 'Formato de data/hora inválido. Use DD/MM/AAAA HH:MM ou HH:MM');
+      }, [formData.driverId, formData.secondDriverId]);
+      // Segundo motorista opcional: se preenchido, não pode ser igual ao primeiro
+      if (formData.secondDriverId && formData.secondDriverId === formData.driverId) {
+        Alert.alert('Erro de Validação', 'O segundo motorista não pode ser o mesmo que o primeiro');
         return;
       }
-
-      // Validação de preço no formato brasileiro
-      const priceRegex = /^R?\$?\s?(\d{1,4}(?:\.\d{3})*(?:,\d{2})?|\d+(?:,\d{2})?)$/;
-      
-      if (!priceRegex.test(formData.price.trim())) {
-        Alert.alert('Erro de Validação', 'Formato de preço inválido. Use o formato brasileiro (ex: R$ 45,50 ou 45,50)');
-        return;
-      }
-
-      // Conversão do preço brasileiro para número
-      let priceValue = formData.price.replace('R$', '').replace(/\s/g, '').trim();
-      
-      // Se tem ponto como separador de milhares, remove
-      if (priceValue.includes('.') && priceValue.includes(',')) {
-        priceValue = priceValue.replace(/\./g, '');
-      }
-      
-      // Converte vírgula para ponto decimal
-      priceValue = priceValue.replace(',', '.');
-      const finalPrice = parseFloat(priceValue);
-      
-      if (isNaN(finalPrice) || finalPrice <= 0) {
-        Alert.alert('Erro de Validação', 'Por favor, insira um preço válido maior que zero');
-        return;
-      }
-
-      if (finalPrice < 5.00) {
-        Alert.alert('Erro de Validação', 'O preço mínimo da passagem é R$ 5,00');
-        return;
-      }
-
-      if (finalPrice > 999.99) {
-        Alert.alert('Erro de Validação', 'O preço máximo da passagem é R$ 999,99');
-        return;
-      }
-
-      // Validação de nome da empresa brasileira
-      const companyNameRegex = /^[A-Za-zÀ-ÿ0-9\s\-\.\&]+$/;
-      
-      if (!companyNameRegex.test(formData.bus_company.trim())) {
-        Alert.alert('Erro de Validação', 'Nome da empresa inválido. Use apenas letras, números, espaços, hífens, pontos e &');
-        return;
-      }
-
-      if (formData.bus_company.trim().length < 3) {
-        Alert.alert('Erro de Validação', 'O nome da empresa deve ter pelo menos 3 caracteres');
-        return;
-      }
-
-      if (formData.bus_company.trim().length > 60) {
-        Alert.alert('Erro de Validação', 'O nome da empresa não pode ter mais de 60 caracteres');
-        return;
-      }
-
-      // Validação adicional: não permitir palavras inadequadas
-      const forbiddenWords = ['teste', 'test', 'exemplo', 'sample'];
-      const companyLower = formData.bus_company.trim().toLowerCase();
-      
-      if (forbiddenWords.some(word => companyLower.includes(word))) {
-        Alert.alert('Erro de Validação', 'Por favor, informe o nome real da empresa de ônibus');
-        return;
-      }
-
-      const normalizedBusTypeForDB = formatBusTypeForDB(formData.bus_type);
-      const capacity = getCapacityByBusType(normalizedBusTypeForDB);
 
       const toHHMMSS = (d: Date) => {
         const pad = (n: number) => String(n).padStart(2, '0');
@@ -629,7 +560,11 @@ export default function RoutesManagement() {
         status: 'active' as 'active',
         available_seats: capacity,
         // Vinculação do motorista
-        driver_id: formData.driverId || undefined
+        driver_id: formData.driverId || undefined,
+        // Segundo motorista vinculado (opcional)
+        second_driver_id: formData.secondDriverId || undefined,
+        // Vinculação do ônibus
+        bus_id: effectiveBusId
       };
 
       if (editingRoute) {
@@ -669,7 +604,9 @@ export default function RoutesManagement() {
       bus_company: route.bus_company,
       bus_type: route.bus_type || 'convencional',
       amenities: [],
-      driverId: (route as any).driver_id || ''
+      driverId: (route as any).driver_id || '',
+      secondDriverId: '',
+      busId: (route as any).bus_id || ''
     });
     setEditingRoute(route);
     setModalVisible(true);
@@ -749,16 +686,41 @@ export default function RoutesManagement() {
                   <Text style={styles.routeTitle}>
                     {route.origin} → {route.destination}
                   </Text>
-                  <View style={styles.routeDetails}>
-                    <View style={styles.detailItem}>
+                  <View style={styles.routeDetails}
+>
+                    <View style={styles.detailItem}
+>
                       <Ionicons name="time" size={16} color="#6B7280" />
                       <Text style={styles.detailText}>{route.duration}</Text>
                     </View>
-                    <View style={styles.detailItem}>
+                    <View style={styles.detailItem}
+>
                       <Ionicons name="bus" size={16} color="#6B7280" />
-                      <Text style={styles.detailText}>{route.bus_type}</Text>
+                      <Text style={styles.detailText}>{(() => {
+                        const b = route.bus_id ? allBusesMap[route.bus_id] : undefined;
+                        const type = b?.type ?? route.bus_type;
+                        return formatBusTypeForDisplay(type);
+                      })()}</Text>
                     </View>
-                    <View style={styles.detailItem}>
+                    <View style={styles.detailItem}
+>
+                      <Ionicons name="bus" size={16} color="#6B7280" />
+                      <Text style={styles.detailText}>{(() => {
+                        const b = route.bus_id ? allBusesMap[route.bus_id] : undefined;
+                        return b ? `${b.plate} - ${b.model}` : 'Sem ônibus vinculado';
+                      })()}</Text>
+                    </View>
+                    <View style={styles.detailItem}
+>
+                      <Ionicons name="people" size={16} color="#6B7280" />
+                      <Text style={styles.detailText}>{(() => {
+                        const b = route.bus_id ? allBusesMap[route.bus_id] : undefined;
+                        const cap = b?.seats ?? route.available_seats ?? getCapacityByBusType(route.bus_type);
+                        return `${cap} lugares`;
+                      })()}</Text>
+                    </View>
+                    <View style={styles.detailItem}
+>
                       <Ionicons name="cash" size={16} color="#6B7280" />
                       <Text style={styles.detailText}>{route.price}</Text>
                     </View>
@@ -975,45 +937,47 @@ export default function RoutesManagement() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Tipo de Ônibus *</Text>
-              <View style={styles.pickerContainer}>
-                <TouchableOpacity 
-                  style={[styles.pickerOption, formData.bus_type === 'convencional' && styles.pickerOptionSelected]}
-                  onPress={() => handleInputChange('bus_type', 'convencional')}
+              <Text style={styles.label}>Segundo Motorista (opcional)</Text>
+              <View style={styles.input}>
+                <Picker
+                  selectedValue={formData.secondDriverId}
+                  onValueChange={(value) => handleInputChange('secondDriverId', value as string)}
                 >
-                  <Text style={[styles.pickerText, formData.bus_type === 'convencional' && styles.pickerTextSelected]}>
-                    Convencional
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.pickerOption, formData.bus_type === 'executivo' && styles.pickerOptionSelected]}
-                  onPress={() => handleInputChange('bus_type', 'executivo')}
-                >
-                  <Text style={[styles.pickerText, formData.bus_type === 'executivo' && styles.pickerTextSelected]}>
-                    Executivo
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.pickerOption, formData.bus_type === 'semi-leito' && styles.pickerOptionSelected]}
-                  onPress={() => handleInputChange('bus_type', 'semi-leito')}
-                >
-                  <Text style={[styles.pickerText, formData.bus_type === 'semi-leito' && styles.pickerTextSelected]}>
-                    Semi-Leito
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.pickerOption, formData.bus_type === 'leito' && styles.pickerOptionSelected]}
-                  onPress={() => handleInputChange('bus_type', 'leito')}
-                >
-                  <Text style={[styles.pickerText, formData.bus_type === 'leito' && styles.pickerTextSelected]}>
-                    Leito
-                  </Text>
-                </TouchableOpacity>
+                  <Picker.Item label={driversLoading ? 'Carregando...' : 'Selecione um segundo motorista'} value="" color="#9CA3AF" />
+                  {drivers.filter((d) => d.id !== formData.driverId).map((d) => (
+                    <Picker.Item key={d.id} label={d.name} value={d.id} color="#1F2937" />
+                  ))}
+                </Picker>
               </View>
             </View>
 
-            {/* Motorista vinculado */}
-            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Ônibus *</Text>
+              <View style={styles.input}>
+                <Picker
+                  selectedValue={formData.busId}
+                  onValueChange={(value) => handleInputChange('busId', value as string)}
+                >
+                  <Picker.Item label={busesLoading ? 'Carregando...' : 'Selecione um ônibus'} value="" color="#9CA3AF" />
+                  {buses.map((bus) => (
+                    <Picker.Item 
+                      key={bus.id} 
+                      label={`${bus.plate} - ${bus.model} (${bus.type})`} 
+                      value={bus.id} 
+                      color="#1F2937" 
+                    />
+                  ))}
+                </Picker>
+              </View>
+              {!busesLoading && !formData.busId ? (
+                <Text style={{ color: '#EF4444', marginTop: 4 }}>Selecione um ônibus</Text>
+              ) : null}
+              {busesError ? (
+                <Text style={{ color: '#EF4444', marginTop: 4 }}>{busesError}</Text>
+              ) : null}
+            </View>
+
+            {/* Motorista vinculado */}    
 
           </ScrollView>
 
@@ -1334,3 +1298,11 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
 });
+
+const formatBusTypeForDisplay = (type: string) => {
+  const t = (type || '').toLowerCase().trim();
+  if (t === 'convencional') return 'Convencional';
+  if (t === 'executivo') return 'Executivo';
+  if (t === 'leito') return 'Leito';
+  return t || 'Convencional';
+};

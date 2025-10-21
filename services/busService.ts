@@ -151,5 +151,26 @@ export const busService = {
       console.error('Erro no serviço getBusesByType:', error);
       throw error;
     }
+  },
+
+  // Buscar ônibus disponíveis para vinculação a rotas (ativos)
+  async getAvailableBuses(): Promise<Bus[]> {
+    try {
+      const { data, error } = await supabase
+        .from('buses')
+        .select('*')
+        .eq('status', 'active')
+        .order('plate', { ascending: true });
+
+      if (error) {
+        console.error('Erro ao buscar ônibus disponíveis:', error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Erro no serviço getAvailableBuses:', error);
+      throw error;
+    }
   }
 };
